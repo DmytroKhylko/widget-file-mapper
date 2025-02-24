@@ -5,26 +5,57 @@ import base64
 import json
 import re
 
+OUTPUT_DIR = "output"
+ASSETS_DIR = os.path.join(OUTPUT_DIR, "_assets", "imgs")
+WIDGETS_DIR = os.path.join(OUTPUT_DIR, "Widgets")
+
+
 def to_snake_case(s):
-    # Replace spaces and hyphens with underscores
+    # Replace spaces and hyphens with underscores, remove non-alphanumeric characters, and lowercase
     s = re.sub(r'[\s-]+', '_', s)
-    # Remove any characters that are not alphanumeric or underscores
     s = re.sub(r'[^\w_]', '', s)
     return s.lower()
 
+
+def create_directory(path):
+    try:
+        os.makedirs(path, exist_ok=True)
+    except Exception as e:
+        print(f"Error creating directory {path}: {e}")
+
+
+def write_text_file(path, content):
+    if content == None:
+        content = ""
+    try:
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(content)
+    except Exception as e:
+        print(f"Error writing file {path}: {e}")
+
+
+def write_binary_file(path, content):
+    try:
+        with open(path, "wb") as f:
+            f.write(content)
+    except Exception as e:
+        print(f"Error writing binary file {path}: {e}")
+
+
 def read_file(file_path):
-    """Reads and prints the content of a file."""
+    """Reads and returns JSON content from a file."""
     try:
         with open(file_path, "r", encoding="utf-8") as f:
-            file = f.read()
-            return json.loads(file)
+            return json.loads(f.read())
     except Exception as e:
         print(f"Error reading {file_path}: {e}")
+
 
 def get_files_from_directory(directory):
     """Returns a list of file paths from the specified directory."""
     try:
-        return [os.path.join(directory, f) for f in os.listdir(directory) if os.path.isfile(os.path.join(directory, f))]
+        return [os.path.join(directory, f) for f in os.listdir(directory)
+                if os.path.isfile(os.path.join(directory, f))]
     except Exception as e:
         print(f"Error accessing directory {directory}: {e}")
         return []
@@ -33,131 +64,92 @@ def get_files_from_directory(directory):
 def widget_info_to_markdown(widget):
     widget_image_name = None
     widget_image_base64 = None
-    for resource in widget['resources']:
-        if resource['type'] == 'IMAGE':
-            widget_image_name = resource['title'] if resource['title'].endswith(".png") else resource['title'] + ".png"
-            widget_image_base64 = resource['data']
-    try:
-        if (widget_image_base64):
-            with open(f'output/_assets/imgs/{widget_image_name}', "wb") as file:
-                file.write(base64.b64decode(widget_image_base64))
 
-        with open(f'output/README.md', "a", encoding="utf-8") as file:
-            file.write(f'### {widget['name']}\n\n')
-            if (widget['description']):
-                file.write(f'{widget['description']}\n\n')
-            if (widget_image_base64):
-                # file.write(f'![{widget_image_name}](_assets/imgs/{quote(widget_image_name)})\n\n')
+    for resource in widget.get("resources", []):
+        if resource.get("type") == "IMAGE":
+            title = resource.get("title", "")
+            widget_image_name = title if title.endswith(".png") else title + ".png"
+            widget_image_base64 = resource.get("data")
+            break  # Process only the first image found
+
+    if widget_image_base64:
+        create_directory(ASSETS_DIR)
+        image_path = os.path.join(ASSETS_DIR, widget_image_name)
+        write_binary_file(image_path, base64.b64decode(widget_image_base64))
+
+    readme_path = os.path.join(OUTPUT_DIR, "README.md")
+    try:
+        with open(readme_path, "a", encoding="utf-8") as file:
+            file.write(f'### {widget["name"]}\n\n')
+            if widget.get("description"):
+                file.write(f'{widget["description"]}\n\n')
+            if widget_image_base64:
                 file.write(f'![{widget_image_name}](<_assets/imgs/{widget_image_name}>)\n\n')
             else:
-                file.write(f'NO IMAGE PROVIDED\n\n')
-
-
+                file.write("NO IMAGE PROVIDED\n\n")
     except Exception as e:
-        print(e)
+        print(f"Error updating README.md: {e}")
+
 
 def parse_widget_actions(widget):
-    default_config = json.loads(widget['descriptor']['defaultConfig'])
-    if ('actions' in default_config.keys()):
-        widget_actions = default_config['actions']
-        for widget_action_type in widget_actions:
-            for widget_action in widget_actions[widget_action_type]:
-                if widget_action['type'] == 'custom':
-                    try:
-                        os.makedirs(f'output/Widgets/{widget['name']}/Actions/{widget_action_type}/{widget_action['name']}', exist_ok=True)
-                    except FileExistsError as e:
-                        print(e)
-                    except Exception as e:
-                        print(e)
+    default_config = json.loads(widget["descriptor"]["defaultConfig"])
+    actions = default_config.get("actions", {})
+    for action_type, action_list in actions.items():
+        for action in action_list:
+            action_name = action.get("name")
+            widget_name = widget["name"]
+            action_dir = os.path.join(WIDGETS_DIR, widget_name, "Actions", action_type, action_name)
+            if action["type"] == "custom":
+                create_directory(action_dir)
+                js_file = os.path.join(action_dir, f"{to_snake_case(action_name)}.js")
+                write_text_file(js_file, action.get("customFunction", ""))
 
-                    try:
-                        with open(f'output/Widgets/{widget['name']}/Actions/{widget_action_type}/{widget_action['name']}/{to_snake_case(widget_action['name'])}.js', "w", encoding="utf-8") as file:
-                            file.write(widget_action['customFunction'])
-                    except Exception as e:
-                        print(e);
-                elif widget_action['type'] == 'customPretty':
-                    try:
-                        os.makedirs(f'output/Widgets/{widget['name']}/Actions/{widget_action_type}/{widget_action['name']}', exist_ok=True)
-                    except FileExistsError as e:
-                        print(e)
-                    except Exception as e:
-                        print(e)
-
-                    try:
-                        with open(f'output/Widgets/{widget['name']}/Actions/{widget_action_type}/{widget_action['name']}/{to_snake_case(widget_action['name'])}.js', "w", encoding="utf-8") as file:
-                            file.write(widget_action['customFunction'])
-                        with open(f'output/Widgets/{widget['name']}/Actions/{widget_action_type}/{widget_action['name']}/{to_snake_case(widget_action['name'])}.html', "w", encoding="utf-8") as file:
-                            file.write(widget_action['customHtml'])
-                        with open(f'output/Widgets/{widget['name']}/Actions/{widget_action_type}/{widget_action['name']}/{to_snake_case(widget_action['name'])}.css', "w", encoding="utf-8") as file:
-                            file.write(widget_action['customCss'])
-                    except Exception as e:
-                        print(e);
+            if action["type"] == "customPretty":
+                create_directory(action_dir)
+                html_file = os.path.join(action_dir, f"{to_snake_case(action_name)}.html")
+                css_file = os.path.join(action_dir, f"{to_snake_case(action_name)}.css")
+                write_text_file(html_file, action.get("customHtml", ""))
+                write_text_file(css_file, action.get("customCss", ""))
 
 
 def parse_and_save_widget(widget):
-    try:
-        os.makedirs(f'output/_assets/imgs', exist_ok=True)
-        os.makedirs(f'output/Widgets/{widget['name']}', exist_ok=True)
-        os.makedirs(f'output/Widgets/{widget['name']}/src/', exist_ok=True)
-        print('Widget created:', widget['name'])
-    except FileExistsError as e:
-        print(e)
-    except Exception as e:
-        print(e)
+    widget_name = widget["name"]
+    widget_dir = os.path.join(WIDGETS_DIR, widget_name)
+    widget_src_dir = os.path.join(widget_dir, "src")
 
-    try:
-        with open(f'output/Widgets/{widget['name']}/{to_snake_case(widget['name'])}.js', "w", encoding="utf-8") as file:
-            file.write(widget['descriptor']['controllerScript'])
-    except Exception as e:
-        print(e);
+    create_directory(ASSETS_DIR)
+    create_directory(widget_dir)
+    create_directory(widget_src_dir)
 
-    try:
-        with open(f'output/Widgets/{widget['name']}/{to_snake_case(widget['name'])}.css', "w", encoding="utf-8") as file:
-            file.write(widget['descriptor']['templateCss'])
-    except Exception as e:
-        print(e);
+    print("Widget created:", widget_name)
 
-    try:
-        with open(f'output/Widgets/{widget['name']}/{to_snake_case(widget['name'])}.html', "w", encoding="utf-8") as file:
-            file.write(widget['descriptor']['templateHtml'])
-    except Exception as e:
-        print(e);
+    files_to_write = {
+        f"{to_snake_case(widget_name)}.js": widget["descriptor"].get("controllerScript", ""),
+        f"{to_snake_case(widget_name)}.css": widget["descriptor"].get("templateCss", ""),
+        f"{to_snake_case(widget_name)}.html": widget["descriptor"].get("templateHtml", ""),
+        f"{to_snake_case(widget_name)}.settings.json": widget["descriptor"].get("settingsSchema", ""),
+        f"{to_snake_case(widget_name)}.datakey.settings.json": widget["descriptor"].get("dataKeySettingsSchema", ""),
+    }
+    for filename, content in files_to_write.items():
+        write_text_file(os.path.join(widget_dir, filename), content)
 
-    try:
-        with open(f'output/Widgets/{widget['name']}/{to_snake_case(widget['name'])}.settings.json', "w", encoding="utf-8") as file:
-            file.write(widget['descriptor']['settingsSchema'])
-    except Exception as e:
-        print(e);
-
-    try:
-        with open(f'output/Widgets/{widget['name']}/{to_snake_case(widget['name'])}.datakey.settings.json', "w", encoding="utf-8") as file:
-            file.write(widget['descriptor']['dataKeySettingsSchema'])
-    except Exception as e:
-        print(e);
-
-    try:
-        with open(f'output/Widgets/{widget['name']}/src/{to_snake_case(widget['name'])}.json', "w", encoding="utf-8") as file:
-            file.write(json.dumps(widget))
-    except Exception as e:
-        print(e);
-
-    # print(widget['descriptor']['defaultConfig'])
+    # Save the widget's JSON data in the src directory
+    widget_json_path = os.path.join(widget_src_dir, f"{to_snake_case(widget_name)}.json")
+    write_text_file(widget_json_path, json.dumps(widget))
 
     parse_widget_actions(widget)
     widget_info_to_markdown(widget)
 
-def main():
-    parser = argparse.ArgumentParser(description="Read and print the contents of files.")
-    parser.add_argument("-d", "--directory", help="Specify a directory to read all files from.")
-    parser.add_argument("-f", "--files", nargs="+", help="Specify individual files to read.")
 
+def main():
+    parser = argparse.ArgumentParser(description="Process widget files and create output.")
+    parser.add_argument("-d", "--directory", help="Directory containing widget files.")
+    parser.add_argument("-f", "--files", nargs="+", help="Individual widget files.")
     args = parser.parse_args()
 
-    files_to_read = set()  # Using a set to avoid duplicate file processing
-
+    files_to_read = set()
     if args.directory:
         files_to_read.update(get_files_from_directory(args.directory))
-
     if args.files:
         files_to_read.update(args.files)
 
@@ -166,20 +158,20 @@ def main():
         return
 
     widgets = []
-    for file in files_to_read:
-        widgets.append(read_file(file))
+    for file_path in files_to_read:
+        widget_data = read_file(file_path)
+        if widget_data:
+            widgets.append(widget_data)
 
     for widget in widgets:
-        if ('widgetTypes' in widget.keys()):
-            for bundleWidget in widget['widgetTypes']:
-                parse_and_save_widget(bundleWidget)
-            try:
-                with open(f'output/Widgets/{widget['widgetsBundle']['title']}.bundle.json', "w", encoding="utf-8") as file:
-                    file.write(json.dumps(widget))
-            except Exception as e:
-                print(e);
+        if "widgetTypes" in widget:
+            for bundle_widget in widget["widgetTypes"]:
+                parse_and_save_widget(bundle_widget)
+            bundle_path = os.path.join(WIDGETS_DIR, f"{widget['widgetsBundle']['alias']}.bundle.json")
+            write_text_file(bundle_path, json.dumps(widget))
         else:
             parse_and_save_widget(widget)
+
 
 if __name__ == "__main__":
     main()
