@@ -80,7 +80,8 @@ def widget_info_to_markdown(widget):
     readme_path = os.path.join(OUTPUT_DIR, "README.md")
     try:
         with open(readme_path, "a", encoding="utf-8") as file:
-            file.write(f'### {widget["name"]}\n\n')
+            file.write(f'### {widget["name"]} ')
+            file.write(f'[(source code)](<{os.path.join('Widgets', widget["name"], "src", to_snake_case(widget["name"])) + ".json"}>)\n\n')
             if widget.get("description"):
                 file.write(f'{widget["description"]}\n\n')
             if widget_image_base64:
